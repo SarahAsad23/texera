@@ -25,7 +25,7 @@ import { AppSettings } from "../../../common/app-setting";
 import { areOperatorSchemasEqual, OperatorSchema } from "../../types/operator-schema.interface";
 import { ExecuteWorkflowService } from "../execute-workflow/execute-workflow.service";
 import { WorkflowActionService } from "../workflow-graph/model/workflow-action.service";
-import { catchError, debounceTime, mergeMap } from "rxjs/operators";
+import { catchError, debounceTime, map, mergeMap } from "rxjs/operators";
 import { DynamicSchemaService } from "../dynamic-schema/dynamic-schema.service";
 import {
   AttributeType,
@@ -42,6 +42,8 @@ import { WorkflowGraphReadonly } from "../workflow-graph/model/workflow-graph";
 import { serializePortIdentity } from "../../../common/util/port-identity-serde";
 import { addCompilationError, areAllPortSchemasEqual } from "../../../common/util/workflow-compilation-utils";
 import { parseLogicalOperatorPortID } from "../../../common/util/logical-operator-port-serde";
+import { WorkflowExecutionsService } from "../../../dashboard/service/user/workflow-executions/workflow-executions.service";
+import { WorkflowCacheEntriesService } from "../workflow-status/workflow-cache-entries.service";
 
 // endpoint for workflow compile
 export const WORKFLOW_COMPILATION_ENDPOINT = "compile";
@@ -49,10 +51,11 @@ export const WORKFLOW_COMPILATION_ENDPOINT = "compile";
 export const WORKFLOW_COMPILATION_DEBOUNCE_TIME_MS = 500;
 
 /**
- * Workflow Compiling Service provides mainly 3 functionalities:
+ * Workflow Compiling Service provides mainly 4 functionalities:
  * 1. autocomplete attribute property of operators (previously done by the SchemaPropagationService)
  * 2. receive static errors (previously done by sending EditingTimeCompilationRequest and saving in the ExecutionStateInfo)
  * 3. manage PhysicalPlan (TODO: send the physical plan to the standalone WorkflowExecutingService once we have it)
+ * 4. invalidate mismatched cache entries after successful compilation
  *
  * When user creates and connects operators in workflow, the WorkflowCompilingService's api will be triggered, which,
  * propagate the schemas, compiles the user's workflow to get the physical plan and static errors(if any).
@@ -73,11 +76,14 @@ export class WorkflowCompilingService {
     private httpClient: HttpClient,
     private workflowActionService: WorkflowActionService,
     private dynamicSchemaService: DynamicSchemaService,
-    private validationWorkflowService: ValidationWorkflowService
+    private validationWorkflowService: ValidationWorkflowService,
+    private workflowExecutionsService: WorkflowExecutionsService,
+    private cacheEntriesService: WorkflowCacheEntriesService
   ) {
     // Subscribe to compilation state changes to apply schema propagation
     this.compilationStateInfoChangedStream.subscribe(() => {
       this.applySchemaPropagationResult();
+      this.autoPopulateAttributeListProperties();
     });
 
     // invoke the compilation service when there are any changes on workflow topology and properties. This includes:
@@ -98,10 +104,10 @@ export class WorkflowCompilingService {
             this.validationWorkflowService.getValidTexeraGraph(),
             undefined
           );
-          return this.compile(logicalPlan);
+          return this.compile(logicalPlan).pipe(map(response => ({ response, logicalPlan })));
         })
       )
-      .subscribe(response => {
+      .subscribe(({ response, logicalPlan }) => {
         if (response.physicalPlan) {
           this.currentCompilationStateInfo = {
             state: CompilationState.Succeeded,
@@ -116,6 +122,7 @@ export class WorkflowCompilingService {
           };
         }
         this.compilationStateInfoChangedStream.next(this.currentCompilationStateInfo.state);
+        this.invalidateMismatchedCacheEntries(logicalPlan);
       });
   }
 
@@ -204,6 +211,94 @@ export class WorkflowCompilingService {
         this.dynamicSchemaService.setDynamicSchema(operatorID, newDynamicSchema);
       }
     });
+  }
+
+  /**
+   * Auto-populates operator properties that have autofill="attributeList" annotation.
+   * This is used to automatically set output columns for UDF operators based on input schema.
+   *
+   * Only auto-populates when:
+   * 1. The property has autofill="attributeList" in its schema
+   * 2. The current property value is empty (null, undefined, or empty array)
+   * 3. Input schema is available for the specified port
+   */
+  private autoPopulateAttributeListProperties(): void {
+    Array.from(this.dynamicSchemaService.getDynamicSchemaMap().keys()).forEach(operatorID => {
+      const operator = this.workflowActionService.getTexeraGraph().getOperator(operatorID);
+      if (!operator) return;
+
+      const dynamicSchema = this.dynamicSchemaService.getDynamicSchema(operatorID);
+      if (!dynamicSchema?.jsonSchema?.properties) return;
+
+      // Get input schema for this operator
+      const inputSchemaMap = this.getOperatorInputSchemaMap(operatorID);
+      if (!inputSchemaMap) return;
+
+      // Find properties with autofill="attributeList"
+      const propertiesToPopulate = this.findAttributeListProperties(dynamicSchema.jsonSchema);
+
+      if (propertiesToPopulate.length === 0) return;
+
+      let needsUpdate = false;
+      const newProperties = { ...operator.operatorProperties };
+
+      for (const { propertyName, portIndex } of propertiesToPopulate) {
+        const currentValue = operator.operatorProperties[propertyName];
+
+        // Only auto-populate if current value is empty
+        if (currentValue && Array.isArray(currentValue) && currentValue.length > 0) {
+          continue;
+        }
+
+        // Get input schema for the specified port
+        const portId = serializePortIdentity({ id: portIndex, internal: false });
+        const inputSchema = inputSchemaMap[portId];
+
+        if (!inputSchema || inputSchema.length === 0) {
+          continue;
+        }
+
+        // Convert PortSchema to Attribute array format
+        // Note: attributeType must be lowercase to match backend AttributeType enum's @JsonValue
+        const attributeList = inputSchema.map(attr => ({
+          attributeName: attr.attributeName,
+          attributeType: attr.attributeType,
+        }));
+
+        newProperties[propertyName] = attributeList;
+        needsUpdate = true;
+      }
+
+      if (needsUpdate) {
+        this.workflowActionService.setOperatorProperty(operatorID, newProperties);
+      }
+    });
+  }
+
+  /**
+   * Finds all properties in a JSON schema that have autofill="attributeList".
+   *
+   * @param jsonSchema The JSON schema to search
+   * @returns Array of objects containing propertyName and portIndex
+   */
+  private findAttributeListProperties(
+    jsonSchema: CustomJSONSchema7
+  ): Array<{ propertyName: string; portIndex: number }> {
+    const result: Array<{ propertyName: string; portIndex: number }> = [];
+
+    if (!jsonSchema.properties) return result;
+
+    for (const [propertyName, propertyValue] of Object.entries(jsonSchema.properties)) {
+      if (typeof propertyValue === "boolean") continue;
+
+      const customProperty = propertyValue as CustomJSONSchema7;
+      if (customProperty.autofill === "attributeList") {
+        const portIndex = customProperty.autofillAttributeOnPort ?? 0;
+        result.push({ propertyName, portIndex });
+      }
+    }
+
+    return result;
   }
 
   /**
@@ -311,6 +406,40 @@ export class WorkflowCompilingService {
           return EMPTY;
         })
       );
+  }
+
+  /**
+   * Triggers cache invalidation after a successful compilation.
+   * Cache entries with mismatched fingerprints are removed on the backend, and
+   * the cache panel is notified when entries are actually removed.
+   * This is skipped when auto invalidation is disabled in the cache panel.
+   */
+  private invalidateMismatchedCacheEntries(logicalPlan: LogicalPlan): void {
+    const workflowId = this.workflowActionService.getWorkflowMetadata().wid;
+    if (
+      workflowId === undefined ||
+      workflowId <= 0 ||
+      this.currentCompilationStateInfo.state !== CompilationState.Succeeded
+    ) {
+      return;
+    }
+    if (!this.cacheEntriesService.isAutoInvalidationEnabled()) {
+      return;
+    }
+    this.workflowExecutionsService
+      .invalidateWorkflowCacheEntries(workflowId, logicalPlan)
+      .pipe(
+        catchError(err => {
+          console.warn("cache invalidation failed during compilation", err);
+          return EMPTY;
+        })
+      )
+      .subscribe(response => {
+        const removedCount = response?.removedCount ?? 0;
+        this.cacheEntriesService.refreshCacheEntries(workflowId).subscribe(() => {
+          this.cacheEntriesService.notifyInvalidation(workflowId, removedCount);
+        });
+      });
   }
 
   public static setOperatorInputAttrs(

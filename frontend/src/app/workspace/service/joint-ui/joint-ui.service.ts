@@ -102,6 +102,18 @@ export const removeOutputPortButtonSVG = `
 `;
 
 /**
+ * Defines the SVG for the chat button (message icon)
+ * This button allows users to send feedback to agents about this operator
+ */
+export const chatButtonSVG = `
+  <svg class="chat-button" height="20" width="20" viewBox="0 0 24 24">
+    <rect x="0" y="0" width="24" height="24" fill="transparent" pointer-events="visible" />
+    <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/>
+    <title>Chat with agent about this operator</title>
+  </svg>
+`;
+
+/**
  * Defines the handle (the square at the end) of the source operator for a link
  */
 export const sourceOperatorHandle = "M 0 0 L 0 8 L 8 8 L 8 0 z";
@@ -117,6 +129,7 @@ export const operatorViewResultIconClass = "texera-operator-view-result-icon";
 export const operatorStateClass = "texera-operator-state";
 export const operatorCoeditorEditingClass = "texera-operator-coeditor-editing";
 export const operatorCoeditorChangedPropertyClass = "texera-operator-coeditor-changed-property";
+export const operatorAgentActionProgressClass = "texera-operator-agent-action-progress";
 
 export const operatorIconClass = "texera-operator-icon";
 export const operatorNameClass = "texera-operator-name";
@@ -147,6 +160,7 @@ class TexeraCustomJointElement extends joint.shapes.devs.Model {
       <text class="${operatorReuseCacheTextClass}"></text>
       <text class="${operatorCoeditorEditingClass}"></text>
       <text class="${operatorCoeditorChangedPropertyClass}"></text>
+      <text class="${operatorAgentActionProgressClass}"></text>
       <image class="${operatorViewResultIconClass}"></image>
       <image class="${operatorReuseCacheIconClass}"></image>
       <text class="${operatorCoeditorEditingClass}"></text>
@@ -156,6 +170,7 @@ class TexeraCustomJointElement extends joint.shapes.devs.Model {
       <path class="left-boundary"></path>
       <path class="right-boundary"></path>
       ${deleteButtonSVG}
+      ${chatButtonSVG}
       ${dynamicInputPorts ? addInputPortButtonSVG : ""}
       ${dynamicInputPorts ? removeInputPortButtonSVG : ""}
       ${dynamicOutputPorts ? addOutputPortButtonSVG : ""}
@@ -238,6 +253,7 @@ export class JointUIService {
         width: JointUIService.DEFAULT_OPERATOR_WIDTH,
         height: JointUIService.DEFAULT_OPERATOR_HEIGHT,
       },
+      portLabelMarkup: JointUIService.getCustomPortLabelMarkup(),
       attrs: JointUIService.getCustomOperatorStyleAttrs(
         operator,
         operator.customDisplayName ?? operatorSchema.additionalMetadata.userFriendlyName,
@@ -246,8 +262,26 @@ export class JointUIService {
       ),
       ports: {
         groups: {
-          in: { attrs: JointUIService.getCustomPortStyleAttrs() },
-          out: { attrs: JointUIService.getCustomPortStyleAttrs() },
+          in: {
+            attrs: JointUIService.getCustomPortStyleAttrs(),
+            markup: JointUIService.getCustomPortMarkup(),
+            label: {
+              position: {
+                name: "left",
+                args: { x: -5, y: 10 },
+              },
+            },
+          },
+          out: {
+            attrs: JointUIService.getCustomPortStyleAttrs(),
+            markup: JointUIService.getCustomPortMarkup(),
+            label: {
+              position: {
+                name: "right",
+                args: { x: 5, y: -10 },
+              },
+            },
+          },
         },
       },
       markup: TexeraCustomJointElement.getMarkup(
@@ -301,12 +335,17 @@ export class JointUIService {
     return operatorElement;
   }
 
+  /**
+   * Updates operator state, worker labels, and per-port counts using latest statistics.
+   * Cache labels are applied for cached outputs and positioned to avoid overlapping the outgoing edge.
+   */
   public changeOperatorStatistics(
     jointPaper: joint.dia.Paper,
     operatorID: string,
     statistics: OperatorStatistics | undefined,
     isSource: boolean,
-    isSink: boolean
+    isSink: boolean,
+    cachePortLabels?: Record<string, string>
   ): void {
     if (!statistics) {
       this.changeOperatorState(jointPaper, operatorID, OperatorState.Uninitialized);
@@ -322,9 +361,12 @@ export class JointUIService {
 
     const inputMetrics = statistics.inputPortMetrics;
     const outputMetrics = statistics.outputPortMetrics;
+    // Cached operators show "-" for inputs and non-materialized outputs, and label workers as "from cache".
+    const isSkippedFromCache = statistics.operatorState === OperatorState.CompletedFromCache;
 
     const workerCount = statistics.numWorkers ?? 1;
-    element.attr(`.${operatorWorkerCountClass}/text`, "#workers: " + String(workerCount));
+    const workerCountLabel = isSkippedFromCache ? "from cache" : "#workers: " + String(workerCount);
+    element.attr(`.${operatorWorkerCountClass}/text`, workerCountLabel);
 
     element.attr(
       `.${operatorStatusTextClass}/text`,
@@ -337,7 +379,7 @@ export class JointUIService {
         const parts = portId.split("-");
         const numericSuffix = parts.length > 1 ? parts[1] : portId;
 
-        const count: number = inputMetrics[numericSuffix] ?? 0;
+        const count = inputMetrics[numericSuffix];
         const rawAttrs = (portDef.attrs as any) || {};
         const oldText: string = (rawAttrs[".port-label"] && rawAttrs[".port-label"].text) || "";
         let originalName = oldText.includes(":") ? oldText.split(":", 1)[0].trim() : oldText;
@@ -346,7 +388,9 @@ export class JointUIService {
           originalName = portId;
         }
 
-        const labelText = count.toLocaleString();
+        // Negative counts mark skipped/unknown inputs from cached sub-operators.
+        const isUnknownCount = count !== undefined && count < 0;
+        const labelText = isSkippedFromCache || isUnknownCount ? "-" : (count ?? 0).toLocaleString();
         element.portProp(portId, "attrs/.port-label/text", labelText);
       }
     });
@@ -366,18 +410,73 @@ export class JointUIService {
           originalName = portId;
         }
 
-        const labelText = count.toLocaleString();
-
-        element.portProp(portId, "attrs/.port-label/text", labelText);
+        const baseLabel = isSkippedFromCache && count === undefined ? "-" : (count ?? 0).toLocaleString();
+        element.portProp(portId, "attrs/.port-label/text", baseLabel);
       }
     });
+    const effectiveCacheLabels = isSkippedFromCache ? cachePortLabels : undefined;
+    this.changeOperatorCacheLabels(jointPaper, operatorID, effectiveCacheLabels);
     this.changeOperatorState(jointPaper, operatorID, statistics.operatorState);
+  }
+
+  /**
+   * Updates cache usage labels for output ports without changing counts or operator state.
+   */
+  public changeOperatorCacheLabels(
+    jointPaper: joint.dia.Paper,
+    operatorID: string,
+    cachePortLabels?: Record<string, string>
+  ): void {
+    const element = jointPaper.getModelById(operatorID) as joint.shapes.devs.Model;
+    if (!element) {
+      return;
+    }
+    const outPorts = element.getPorts().filter(p => p.group === "out");
+    outPorts.forEach(portDef => {
+      const portId = portDef.id;
+      if (portId != null) {
+        const parts = portId.split("-");
+        const numericSuffix = parts.length > 1 ? parts[1] : portId;
+        const cacheLabel = cachePortLabels?.[numericSuffix] ?? "";
+        element.portProp(portId, "attrs/.port-cache-label/text", cacheLabel);
+        element.portProp(
+          portId,
+          "attrs/.port-cache-label/transform",
+          cacheLabel ? "translate(0, 12)" : ""
+        );
+      }
+    });
+  }
+
+  /**
+   * Updates cached output port indicator badges without changing counts or labels.
+   */
+  public changeOperatorCachedPorts(
+    jointPaper: joint.dia.Paper,
+    operatorID: string,
+    cachedPortIds?: Set<string>
+  ): void {
+    const element = jointPaper.getModelById(operatorID) as joint.shapes.devs.Model;
+    if (!element) {
+      return;
+    }
+    const outPorts = element.getPorts().filter(p => p.group === "out");
+    outPorts.forEach(portDef => {
+      const portId = portDef.id;
+      if (portId != null) {
+        const parts = portId.split("-");
+        const numericSuffix = parts.length > 1 ? parts[1] : portId;
+        const isCached = cachedPortIds?.has(numericSuffix) ?? false;
+        element.portProp(portId, "attrs/.port-cache-indicator/display", isCached ? "block" : "none");
+      }
+    });
   }
   public foldOperatorDetails(jointPaper: joint.dia.Paper, operatorID: string): void {
     jointPaper.getModelById(operatorID).attr({
       [`.${operatorStateClass}`]: { visibility: "hidden" },
       [`.${operatorPortMetricsClass}`]: { visibility: "hidden" },
       ".delete-button": { visibility: "hidden" },
+      ".chat-button": { visibility: "hidden" },
       ".add-input-port-button": { visibility: "hidden" },
       ".add-output-port-button": { visibility: "hidden" },
       ".remove-input-port-button": { visibility: "hidden" },
@@ -390,6 +489,7 @@ export class JointUIService {
       [`.${operatorStateClass}`]: { visibility: "visible" },
       [`.${operatorPortMetricsClass}`]: { visibility: "visible" },
       ".delete-button": { visibility: "visible" },
+      ".chat-button": { visibility: "visible" },
       ".add-input-port-button": { visibility: "visible" },
       ".add-output-port-button": { visibility: "visible" },
       ".remove-input-port-button": { visibility: "visible" },
@@ -410,6 +510,9 @@ export class JointUIService {
         break;
       case OperatorState.Completed:
         fillColor = "green";
+        break;
+      case OperatorState.CompletedFromCache:
+        fillColor = "#1890ff";
         break;
       case OperatorState.Pausing:
       case OperatorState.Paused:
@@ -436,6 +539,7 @@ export class JointUIService {
     inPorts.forEach(p => {
       if (p.id != null) {
         element.portProp(p.id, "attrs/.port-label/fill", fillColor);
+        element.portProp(p.id, "attrs/.port-cache-label/fill", fillColor);
       }
     });
 
@@ -443,6 +547,7 @@ export class JointUIService {
     outPorts.forEach(p => {
       if (p.id != null) {
         element.portProp(p.id, "attrs/.port-label/fill", fillColor);
+        element.portProp(p.id, "attrs/.port-cache-label/fill", fillColor);
       }
     });
   }
@@ -612,6 +717,8 @@ export class JointUIService {
   /**
    * This function changes the default svg of the operator ports.
    * It hides the port label that will display 'out/in' beside the operators.
+   * Port labels remain visible for per-port metrics and cache metadata, and cached
+   * output ports show a small badge that never captures pointer events so ports stay interactive.
    *
    * @returns the custom attributes of the ports
    */
@@ -621,6 +728,15 @@ export class JointUIService {
         fill: "#A0A0A0",
         r: 5,
         stroke: "none",
+        "pointer-events": "all",
+      },
+      ".port-cache-indicator": {
+        fill: "#fadb14",
+        points: "0,-12 4,-9 0,-6 -4,-9",
+        stroke: "#ad8b00",
+        "stroke-width": 1,
+        display: "none",
+        "pointer-events": "none",
       },
       ".port-label": {
         visibility: "visible",
@@ -630,8 +746,58 @@ export class JointUIService {
         ref: ".port-body",
         "ref-y": 0.5,
         "y-alignment": "middle",
+        "pointer-events": "none",
       },
     };
+  }
+
+  /**
+   * Defines the default markup for ports, including the cache badge and port body.
+   */
+  public static getCustomPortMarkup(): any[] {
+    return [
+      {
+        tagName: "circle",
+        selector: ".port-body",
+        attributes: {
+          class: "port-body",
+          magnet: true,
+        },
+      },
+      {
+        tagName: "polygon",
+        selector: ".port-cache-indicator",
+        attributes: {
+          class: "port-cache-indicator",
+          magnet: false,
+          "pointer-events": "none",
+        },
+      },
+    ];
+  }
+
+  /**
+   * Defines the default port label markup for counts and cache metadata.
+   */
+  public static getCustomPortLabelMarkup(): any[] {
+    return [
+      {
+        tagName: "text",
+        selector: ".port-label",
+        attributes: {
+          class: "port-label",
+          "pointer-events": "none",
+        },
+      },
+      {
+        tagName: "text",
+        selector: ".port-cache-label",
+        attributes: {
+          class: "port-cache-label",
+          "pointer-events": "none",
+        },
+      },
+    ];
   }
 
   /**
@@ -707,6 +873,19 @@ export class JointUIService {
         ref: "rect.body",
         "y-alignment": "middle",
         "x-alignment": "middle",
+      },
+      ".texera-operator-agent-action-progress": {
+        text: "",
+        "font-size": "11px",
+        "font-weight": "bold",
+        "font-family": "'Inter', 'SF Pro Display', -apple-system, sans-serif",
+        visibility: "hidden",
+        "ref-x": 0.5,
+        "ref-y": 95,
+        ref: "rect.body",
+        "text-anchor": "middle",
+        "x-alignment": "middle",
+        "y-alignment": "middle",
       },
       ".texera-operator-state": {
         text: "",
@@ -830,6 +1009,14 @@ export class JointUIService {
         cursor: "pointer",
         fill: "#D8656A",
         event: "element:delete",
+        visibility: "hidden",
+      },
+      ".chat-button": {
+        x: 85,
+        y: -20,
+        cursor: "pointer",
+        fill: "#1890ff",
+        event: "element:chat",
         visibility: "hidden",
       },
       ".add-input-port-button": {
@@ -998,6 +1185,50 @@ export class JointUIService {
 
   public static getJointUserPointerName(coeditor: Coeditor) {
     return "pointer_" + coeditor.clientId;
+  }
+
+  /**
+   * Shows agent action labels (viewed/added/modified) on operators.
+   * Displays bold agent name and action type as text below the operator.
+   */
+  public showAgentActionLabel(
+    jointPaper: joint.dia.Paper,
+    operatorID: string,
+    actionType: "viewed" | "added" | "modified",
+    agentName: string = "Agent"
+  ): void {
+    const element = jointPaper.getModelById(operatorID);
+    if (!element) {
+      return;
+    }
+
+    const labelText = `${agentName}: ${actionType}`;
+
+    element.attr({
+      [`.${operatorAgentActionProgressClass}`]: {
+        text: labelText,
+        fill: "#52c41a",
+        "font-weight": "bold",
+        visibility: "visible",
+      },
+    });
+  }
+
+  /**
+   * Hides agent action labels on operators.
+   */
+  public hideAgentActionLabel(jointPaper: joint.dia.Paper, operatorID: string): void {
+    const element = jointPaper.getModelById(operatorID);
+    if (!element) {
+      return;
+    }
+
+    element.attr({
+      [`.${operatorAgentActionProgressClass}`]: {
+        text: "",
+        visibility: "hidden",
+      },
+    });
   }
 }
 
