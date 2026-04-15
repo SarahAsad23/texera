@@ -25,7 +25,7 @@ import {
   OnDestroy,
   Type,
   ViewChild,
-  HostListener,
+  HostListener, Input,
 } from "@angular/core";
 import { UntilDestroy, untilDestroyed } from "@ngneat/until-destroy";
 import { WorkflowActionService } from "../../service/workflow-graph/model/workflow-action.service";
@@ -74,6 +74,7 @@ export class CodeEditorComponent implements AfterViewInit, SafeStyle, OnDestroy 
   @ViewChild("container", { static: true }) containerElement!: ElementRef;
   @ViewChild(AnnotationSuggestionComponent) annotationSuggestion!: AnnotationSuggestionComponent;
   @ViewChild(BreakpointConditionInputComponent) breakpointConditionInput!: BreakpointConditionInputComponent;
+  @Input() dragBoundary: string = "texera-workspace";
   private code?: YText;
   private workflowVersionStreamSubject: Subject<void> = new Subject<void>();
   public currentOperatorId!: string;

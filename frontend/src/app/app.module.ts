@@ -58,6 +58,7 @@ import { UserWorkflowComponent } from "./dashboard/component/user/user-workflow/
 import { ShareAccessComponent } from "./dashboard/component/user/share-access/share-access.component";
 import { WorkflowExecutionHistoryComponent } from "./dashboard/component/user/user-workflow/ngbd-modal-workflow-executions/workflow-execution-history.component";
 import { UserQuotaComponent } from "./dashboard/component/user/user-quota/user-quota.component";
+import { UserTemplateComponent } from "./dashboard/component/user/user-template/user-template.component";
 import { UserIconComponent } from "./dashboard/component/user/user-icon/user-icon.component";
 import { UserAvatarComponent } from "./dashboard/component/user/user-avatar/user-avatar.component";
 import { CodeEditorComponent } from "./workspace/component/code-editor-dialog/code-editor.component";
@@ -103,9 +104,6 @@ import { CoeditorUserIconComponent } from "./workspace/component/menu/coeditor-u
 import { AgentPanelComponent } from "./workspace/component/agent-panel/agent-panel.component";
 import { AgentChatComponent } from "./workspace/component/agent-panel/agent-chat/agent-chat.component";
 import { AgentRegistrationComponent } from "./workspace/component/agent-panel/agent-registration/agent-registration.component";
-import { DatasetFileSelectorComponent } from "./workspace/component/dataset-file-selector/dataset-file-selector.component";
-import { DatasetVersionSelectorComponent } from "./workspace/component/dataset-version-selector/dataset-version-selector.component";
-import { DatasetSelectionModalComponent } from "./workspace/component/dataset-selection-modal/dataset-selection-modal.component";
 import { CollabWrapperComponent } from "./common/formly/collab-wrapper/collab-wrapper/collab-wrapper.component";
 import { TexeraCopilot } from "./workspace/service/copilot/texera-copilot";
 import { NzSwitchModule } from "ng-zorro-antd/switch";
@@ -188,6 +186,19 @@ import { RegistrationRequestModalComponent } from "./common/service/user/registr
 import { MarkdownDescriptionComponent } from "./dashboard/component/user/markdown-description/markdown-description.component";
 import { UserComputingUnitComponent } from "./dashboard/component/user/user-computing-unit/user-computing-unit.component";
 import { UserComputingUnitListItemComponent } from "./dashboard/component/user/user-computing-unit/user-computing-unit-list-item/user-computing-unit-list-item.component";
+import { TemplatedWorkflowCreationComponent } from "./dashboard/component/user/user-template/templated-workflow-creation/templated-workflow-creation.component";
+import {
+  WorkflowTemplateSelectionComponent
+} from "./dashboard/component/user/user-template/workflow-template-select/workflow-template-selection.component";
+import {
+  DatasetFileSelectorComponent
+} from "./workspace/component/dataset-file-selector/dataset-file-selector.component";
+import {
+  DatasetVersionSelectorComponent
+} from "./workspace/component/dataset-version-selector/dataset-version-selector.component";
+import {
+  DatasetSelectionModalComponent
+} from "./workspace/component/dataset-selection-modal/dataset-selection-modal.component";
 
 registerLocaleData(en);
 
@@ -216,6 +227,8 @@ registerLocaleData(en);
     LocalLoginComponent,
     UserWorkflowComponent,
     UserQuotaComponent,
+    UserTemplateComponent,
+    TemplatedWorkflowCreationComponent,
     RowModalComponent,
     OperatorLabelComponent,
     MiniMapComponent,
@@ -261,6 +274,7 @@ registerLocaleData(en);
     DatasetFileSelectorComponent,
     DatasetVersionSelectorComponent,
     DatasetSelectionModalComponent,
+    WorkflowTemplateSelectionComponent,
     CollabWrapperComponent,
     AboutComponent,
     UserWorkflowListItemComponent,

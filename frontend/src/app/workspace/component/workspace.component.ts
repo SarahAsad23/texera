@@ -18,7 +18,16 @@
  */
 
 import { Location } from "@angular/common";
-import { AfterViewInit, Component, HostListener, OnDestroy, OnInit, ViewChild, ViewContainerRef } from "@angular/core";
+import {
+  AfterViewInit,
+  Component,
+  HostListener,
+  Input,
+  OnDestroy,
+  OnInit,
+  ViewChild,
+  ViewContainerRef
+} from "@angular/core";
 import { ActivatedRoute, Router } from "@angular/router";
 import { UserService } from "../../common/service/user/user.service";
 import { WorkflowPersistService } from "../../common/service/workflow-persist/workflow-persist.service";
@@ -42,6 +51,7 @@ import { WorkflowCompilingService } from "../service/compile-workflow/workflow-c
 import { DASHBOARD_USER_WORKSPACE } from "../../app-routing.constant";
 import { GuiConfigService } from "../../common/service/gui-config.service";
 import { checkIfWorkflowBroken } from "../../common/util/workflow-check";
+import {WorkflowDisplayMode} from "../../dashboard/type/workflow-display-mode";
 
 export const SAVE_DEBOUNCE_TIME_IN_MS = 5000;
 
@@ -56,6 +66,7 @@ export const SAVE_DEBOUNCE_TIME_IN_MS = 5000;
   ],
 })
 export class WorkspaceComponent implements AfterViewInit, OnInit, OnDestroy {
+  @Input() wid?: number;
   public pid?: number = undefined;
   public writeAccess: boolean = false;
   public isLoading: boolean = false;
@@ -125,7 +136,7 @@ export class WorkspaceComponent implements AfterViewInit, OnInit, OnDestroy {
     // clear the current workspace, reset as `WorkflowActionService.DEFAULT_WORKFLOW`
     this.workflowActionService.resetAsNewWorkflow();
     // if a workflow id is present in the route, display loading spinner immediately while loading
-    const widInRoute = this.route.snapshot.params.id;
+    let widInRoute = this.wid ?? this.route.snapshot.params.id;
     if (widInRoute) {
       this.isLoading = true;
       this.workflowActionService.disableWorkflowModification();
@@ -194,7 +205,12 @@ export class WorkspaceComponent implements AfterViewInit, OnInit, OnDestroy {
           const fragment = this.route.snapshot.fragment;
           // load the fetched workflow
           this.workflowActionService.reloadWorkflow(workflow);
-          this.workflowActionService.enableWorkflowModification();
+
+          if (workflow.readonly) {
+            this.workflowActionService.disableWorkflowModification();
+          } else {
+            this.workflowActionService.enableWorkflowModification();
+          }
           // set the URL fragment to previous value
           // because reloadWorkflow will highlight/unhighlight all elements
           // which will change the URL fragment
@@ -238,7 +254,7 @@ export class WorkspaceComponent implements AfterViewInit, OnInit, OnDestroy {
       .getOperatorMetadata()
       .pipe(untilDestroyed(this))
       .subscribe(() => {
-        let wid = this.route.snapshot.params.id;
+        let wid = this.wid ?? this.route.snapshot.params.id;
         // load workflow with wid if presented in the URL
         if (wid) {
           // show loading spinner right away while waiting for workflow to load
@@ -272,7 +288,7 @@ export class WorkspaceComponent implements AfterViewInit, OnInit, OnDestroy {
       });
   }
   updateViewCount() {
-    let wid = this.route.snapshot.params.id;
+    let wid = this.wid ?? this.route.snapshot.params.id;
     let uid = this.userService.getCurrentUser()?.uid;
     this.hubService
       .postView(wid, uid ? uid : 0, EntityType.Workflow)

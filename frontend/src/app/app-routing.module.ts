@@ -22,6 +22,7 @@ import { CanActivateFn, Router, RouterModule, Routes } from "@angular/router";
 import { DashboardComponent } from "./dashboard/component/dashboard.component";
 import { UserWorkflowComponent } from "./dashboard/component/user/user-workflow/user-workflow.component";
 import { UserQuotaComponent } from "./dashboard/component/user/user-quota/user-quota.component";
+import { UserTemplateComponent } from "./dashboard/component/user/user-template/user-template.component";
 import { UserProjectSectionComponent } from "./dashboard/component/user/user-project/user-project-section/user-project-section.component";
 import { UserProjectComponent } from "./dashboard/component/user/user-project/user-project.component";
 import { UserComputingUnitComponent } from "./dashboard/component/user/user-computing-unit/user-computing-unit.component";
@@ -42,6 +43,7 @@ import { DASHBOARD_ABOUT, DASHBOARD_USER_WORKFLOW } from "./app-routing.constant
 import { HubSearchResultComponent } from "./hub/component/hub-search-result/hub-search-result.component";
 import { AdminSettingsComponent } from "./dashboard/component/admin/settings/admin-settings.component";
 import { GuiConfigService } from "./common/service/gui-config.service";
+import { TemplatedWorkflowCreationComponent } from "./dashboard/component/user/user-template/templated-workflow-creation/templated-workflow-creation.component";
 
 const rootRedirectGuard: CanActivateFn = () => {
   const config = inject(GuiConfigService);
@@ -142,6 +144,14 @@ routes.push({
         {
           path: "discussion",
           component: FlarumComponent,
+        },
+        {
+          path: "template",
+          component: UserTemplateComponent,
+        },
+        {
+          path: "template/:tid",
+          component: TemplatedWorkflowCreationComponent,
         },
       ],
     },

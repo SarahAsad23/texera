@@ -50,6 +50,7 @@ import {
   DASHBOARD_USER_DATASET,
   DASHBOARD_USER_PROJECT,
   DASHBOARD_USER_WORKSPACE,
+  DASHBOARD_USER_TEMPLATE,
 } from "../../../../app-routing.constant";
 import { isDefined } from "../../../../common/util/predicate";
 
@@ -136,6 +137,14 @@ export class ListItemComponent implements OnChanges {
           this.entryLink = [DASHBOARD_HUB_DATASET_RESULT_DETAIL, String(this.entry.id)];
         }
         this.iconType = "database";
+        this.size = this.entry.size;
+      }
+    } else if (this.entry.type === "template") {
+      if (typeof this.entry.id === "number") {
+        this.disableDelete = !this.entry.template.isOwner;
+        this.owners = this.entry.accessibleUserIds;
+        this.entryLink = [DASHBOARD_USER_TEMPLATE, String(this.entry.id)];
+        this.iconType = "experiment";
         this.size = this.entry.size;
       }
     } else if (this.entry.type === "file") {
@@ -225,6 +234,8 @@ export class ListItemComponent implements OnChanges {
         .subscribe();
     } else if (this.entry.type === "dataset") {
       this.downloadService.downloadDataset(this.entry.id, this.entry.name).pipe(untilDestroyed(this)).subscribe();
+    } else if (this.entry.type === "template") {
+      this.downloadService.downloadTemplate(this.entry.id, this.entry.name).pipe(untilDestroyed(this)).subscribe();
     }
   };
 
@@ -369,6 +380,10 @@ export class ListItemComponent implements OnChanges {
       return new Date(timestamp).toLocaleDateString();
     }
   }
+
+  openCreateTemplateFromWorkflowPage(wid: number | undefined): void {}
+
+  openCreateWorkflowFromTemplatePage(tid: number | undefined): void {}
 
   openDetailModal(wid: number | undefined): void {
     const modalRef = this.modal.create({
