@@ -119,3 +119,23 @@ nz-content {
   max-height: 100%;
   overflow: hidden;
 }
+
+.powered-by-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 8px 8px 8px;
+}
+
+.powered-by-text {
+  font-size: 15px;
+  color: #8c8c8c;
+  white-space: nowrap;
+}
+
+.powered-by-logo {
+  height: 30px;
+  width: auto;
+  display: block;
+}

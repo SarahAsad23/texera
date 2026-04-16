@@ -212,6 +212,17 @@
         <span>About</span>
       </li>
     </ul>
+
+    <div
+      class="powered-by-footer"
+      *ngIf="!isCollapsed">
+      <span class="powered-by-text">Powered by</span>
+      <img
+        class="powered-by-logo"
+        src="assets/logos/poweredByLogo.png"
+        alt="Texera" />
+    </div>
+
     <span id="git-commit-id">Git hash: {{ gitCommitHash }}</span>
   </nz-sider>
 
@@ -237,3 +248,5 @@
     </nz-layout>
   </div>
 </nz-layout>
+
+
